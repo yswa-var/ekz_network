@@ -1,0 +1,81 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"time"
+)
+
+const MaxMessageSize = 1024 * 1024
+const MaxConnections = 2
+
+func handleClient(conn net.Conn) {
+	defer conn.Close()
+
+	reader := bufio.NewReader(conn)
+	message := make([]byte, 0, 1024)
+
+	messageDeadline := time.Now().Add(60 * time.Second)
+
+	for {
+		idleDeadline := time.Now().Add(10 * time.Second)
+
+		deadline := idleDeadline
+		if messageDeadline.Before(deadline) {
+			deadline = messageDeadline
+		}
+
+		if err := conn.SetReadDeadline(deadline); err != nil {
+			return
+		}
+
+		b, err := reader.ReadByte()
+		if err != nil {
+			return
+		}
+
+		if b == '\n' {
+			fmt.Println("Message:", string(message))
+			message = message[:0]
+
+			messageDeadline = time.Now().Add(60 * time.Second)
+			continue
+		}
+
+		if len(message) >= MaxMessageSize {
+			fmt.Println("Message too large")
+			return
+		}
+
+		message = append(message, b)
+	}
+}
+
+func main() {
+	ln, err := net.Listen("tcp", ":3000")
+	if err != nil {
+		panic(err)
+	}
+	defer ln.Close()
+
+	slots := make(chan struct{}, MaxConnections)
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		select {
+		case slots <- struct{}{}:
+			go func() {
+				defer func() { <-slots }()
+				handleClient(conn)
+			}()
+
+		default:
+			conn.Close() // Server at capacity
+		}
+	}
+}
