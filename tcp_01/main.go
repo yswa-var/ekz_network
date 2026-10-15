@@ -37,6 +37,11 @@ func handleClient(conn net.Conn) {
 
 		if b == '\n' {
 			fmt.Println("Message:", string(message))
+			_, err := conn.Write(append(message, '\n'))
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
 			message = message[:0]
 
 			messageDeadline = time.Now().Add(60 * time.Second)
