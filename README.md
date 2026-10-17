@@ -2,7 +2,7 @@ The goal is to let someone expose a service running on their private computer to
 
 What will ekz_network actually do?
 
-> Imagine you're running a Minecraft server, website, SSH server, or database on your laptop anndd another person on the internet can directly connect to it using ekz 100's of services one tunnel!!!.
+> Imagine you're running a Minecraft server, website, SSH server, or database on your laptop anndd another person on the internet can directly connect to it using ekz,,,  100's of services one tunnel!!!.
 
 Whats working??
 - Binary Protocol: Framed TCP messages (OPEN, DATA, CLOSE).
