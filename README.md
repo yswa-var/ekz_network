@@ -1,3 +1,9 @@
+The goal is to let someone expose a service running on their private computer to users on the internet, without opening inbound router ports or configuring port forwarding.
+
+What will ekz_network actually do?
+
+> Imagine you're running a Minecraft server, website, SSH server, or database on your laptop. Normally, another person on the internet cannot directly connect to it because your laptop is behind a router or NAT.
+
 Status: Experimental / work in progress. The current implementation is a local TCP-forwarding prototype, 
 
 Whats working??
