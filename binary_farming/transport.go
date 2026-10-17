@@ -5,54 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 )
-
-type StreamState uint8
-
-const (
-	StreamIdle StreamState = iota
-	StreamOpen
-	StreamClosed
-)
-
-type Stream struct {
-	mu    sync.Mutex
-	ID    uint32
-	State StreamState
-}
-
-func (s *Stream) CanReceiveData() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.State == StreamOpen
-}
-
-func (s *Stream) Open() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.State != StreamIdle {
-		return fmt.Errorf("invalid state: %d", s.State)
-	}
-
-	s.State = StreamOpen
-	return nil
-}
-
-func (s *Stream) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// 1. Reject if state is not StreamOpen
-	if s.State != StreamOpen {
-		return fmt.Errorf("can't Close stream: invalid state %d", s.State)
-	}
-	// 2. Set state to StreamClosed
-	s.State = StreamClosed
-
-	// 3. Return nil
-	return nil
-}
 
 func SendData(
 	conn net.Conn,
@@ -86,14 +39,12 @@ type TunnelWriter struct {
 	done   chan struct{}
 }
 
-func (t *TunnelWriter) Run() error {
-	defer close(t.done)
+func (writer *TunnelWriter) Run() error {
+	defer close(writer.done)
 
-	for frame := range t.frames {
+	for frame := range writer.frames {
 		encoded := EncodeFrame(frame)
-
-		_, err := io.Copy(t.conn, bytes.NewReader(encoded))
-		if err != nil {
+		if _, err := io.Copy(writer.conn, bytes.NewReader(encoded)); err != nil {
 			return err
 		}
 	}
@@ -101,11 +52,12 @@ func (t *TunnelWriter) Run() error {
 	return nil
 }
 
-func (t *TunnelWriter) Submit(frame Frame) error {
+func (writer *TunnelWriter) Submit(frame Frame) error {
 	select {
-	case t.frames <- frame:
+	case writer.frames <- frame:
 		return nil
-	case <-t.done:
+	case <-writer.done:
 		return fmt.Errorf("tunnel writer stopped")
 	}
 }
+
