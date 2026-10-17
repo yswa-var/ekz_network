@@ -1,52 +1,34 @@
-# ekz_network
+Status: Experimental / work in progress. The current implementation is a local TCP-forwarding prototype, 
 
-ROADMAP                         JOBS YOU CAN TARGET
+Whats working??
+- Binary framing: encode/decode typed frames (OPEN, DATA, CLOSE) with stream IDs and payload lengths.
+- Logical streams: multiplex multiple stream IDs over a single TCP tunnel connection, with per-stream queues and workers.
+- Stream registry: synchronized registration, duplicate-ID prevention, pending dial tracking, and cleanup.
+- Backpressure primitives: bounded queues and a credit-based flow-control experiment.
+- TCP forwarding: forward incoming DATA to a configured local TCP service; package local responses as outgoing DATA frames.
+- Single tunnel writer: serialize outbound frames to avoid interleaved writes.
+- Lifecycle management: stream closure, connection cleanup, and shutdown coordination.
+- Integration test: a reported passing end-to-end echo test through the tunnel and local TCP echo service.
 
-Tier 0–2
-TCP / HTTP / proxy
-                               Backend Engineer
-                               Go Backend Engineer
-                               Junior Platform Engineer
-
-Tier 3–5       ← APPLY HARD HERE
-tunnels
-WebSockets
-RPC
-NATS
-backpressure
-distributed jobs
-                               Infrastructure Engineer
-                               Distributed Systems Engineer
-                               Platform Engineer
-                               Network Software Engineer
-                               Backend Infrastructure Engineer
-
-Tier 6–8
-scheduler
-failures
-containers
-autoscaling
-                               Systems Engineer
-                               Runtime Engineer
-                               Cloud Infrastructure Engineer
-                               SRE / Production Engineer
-
-Tier 9–10
-serverless HTTP
-WireGuard
-overlay networking
-                               Networking Engineer
-                               Edge Infrastructure Engineer
-                               Cloud Networking Engineer
-                               Infrastructure Software Engineer
-
-Tier 11+
-eBPF
-namespaces
-kernel
-runtime
-                               eBPF Engineer
-                               Linux Systems Engineer
-                               Kernel Networking Engineer
-                               Container Runtime Engineer
-                               Staff-level systems trajectory
+Test client
+    │ OPEN / DATA / CLOSE frames
+    ▼
+Tunnel TCP listener
+    │
+    ▼
+Frame decoder → StreamRegistry
+                    │
+                    ├── Stream 42 ── local TCP connection
+                    ├── Stream 43 ── local TCP connection
+                    └── Stream 44 ── local TCP connection
+                           │
+                     Local service
+                           │ response bytes
+                           ▼
+                   Local reader goroutine
+                           │ DATA frame
+                           ▼
+                    TunnelWriter
+                           │
+                           ▼
+                      Test client
