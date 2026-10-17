@@ -12,7 +12,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "server":
-		log.Fatal(StartTunnelServer(":9000"))
+		log.Fatal(StartTunnelServer(":3000"))
 
 	case "client":
 		if err := TestTunnelClient(); err != nil {

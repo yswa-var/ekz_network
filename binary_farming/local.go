@@ -10,6 +10,10 @@ func ConnectLocal(addr string) (net.Conn, error) {
 	return net.DialTimeout("tcp", addr, 5*time.Second)
 }
 
+func ReadLocal(conn net.Conn, buf []byte) (int, error) {
+	return conn.Read(buf)
+}
+
 func ForwardToLocal(conn net.Conn, payload []byte) error {
 	for len(payload) > 0 {
 		n, err := conn.Write(payload)

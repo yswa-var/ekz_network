@@ -2,16 +2,40 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
-	"sync"
 )
 
 func runDemo() {
 	demoBinaryFraming()
 	demoStreamStateMachine()
-	demoConcurrentRegistry()
 	demoFrameRouting()
 	demoFlowControl()
+	demoTunnelToLocal()
+}
+
+func demoTunnelToLocal() {
+	printSection("Tunnel to local TCP forwarding")
+
+	registry := NewStreamRegistry("127.0.0.1:3000")
+
+	frames := []Frame{
+		{Type: FrameOpen, StreamID: 42},
+		{Type: FrameData, StreamID: 42, Payload: []byte("hello bore++")},
+		{Type: FrameClose, StreamID: 42},
+	}
+
+	for _, frame := range frames {
+		if err := HandleIncomingFrame(registry, frame); err != nil {
+			panic(err)
+		}
+	}
+
+	if err := registry.Shutdown(context.Background()); err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Tunnel forwarding completed")
 }
 
 func demoBinaryFraming() {
@@ -36,7 +60,10 @@ func demoBinaryFraming() {
 func demoStreamStateMachine() {
 	printSection("Stream state machine")
 
-	stream := &Stream{ID: 1}
+	stream := &Stream{
+		ID:   1,
+		Done: make(chan struct{}),
+	}
 	fmt.Printf("initial state: %s\n", streamStateName(stream.State))
 
 	_ = stream.Open()
@@ -46,33 +73,6 @@ func demoStreamStateMachine() {
 	_ = stream.Close()
 	fmt.Printf("after CLOSE: %s\n", streamStateName(stream.State))
 	fmt.Printf("DATA after CLOSE rejected: %v\n", stream.HandleData([]byte("late data")))
-}
-
-func demoConcurrentRegistry() {
-	printSection("Concurrent stream registry")
-
-	registry := NewStreamRegistry("127.0.0.1:3000")
-	const streamCount = 8
-
-	var workers sync.WaitGroup
-	for id := uint32(1); id <= streamCount; id++ {
-		workers.Add(1)
-		go func(id uint32) {
-			defer workers.Done()
-			if _, err := registry.Register(100 + id); err != nil {
-				panic(err)
-			}
-		}(id)
-	}
-	workers.Wait()
-
-	registered := 0
-	for id := uint32(1); id <= streamCount; id++ {
-		if _, ok := registry.Get(100 + id); ok {
-			registered++
-		}
-	}
-	fmt.Printf("registered concurrently: %d/%d streams\n", registered, streamCount)
 }
 
 func demoFrameRouting() {
@@ -92,6 +92,10 @@ func demoFrameRouting() {
 			panic(err)
 		}
 		fmt.Printf("routed frame type %d\n", frame.Type)
+	}
+
+	if err := registry.Shutdown(context.Background()); err != nil {
+		panic(err)
 	}
 
 	_, stillRegistered := registry.Get(streamID)
