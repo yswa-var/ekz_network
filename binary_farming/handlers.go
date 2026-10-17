@@ -22,10 +22,10 @@ func HandleFrame(stream *Stream, frame Frame) error {
 	}
 }
 
-func HandleIncomingFrame(registry *StreamRegistry, frame Frame) error {
+func HandleIncomingFrame(registry *StreamRegistry, frame Frame, writer *TunnelWriter) error {
 	switch frame.Type {
 	case FrameOpen:
-		_, err := registry.OpenStream(frame.StreamID)
+		_, err := registry.OpenStream(frame.StreamID, writer)
 		return err
 
 	case FrameData, FrameClose:

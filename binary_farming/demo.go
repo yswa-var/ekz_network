@@ -26,7 +26,7 @@ func demoTunnelToLocal() {
 	}
 
 	for _, frame := range frames {
-		if err := HandleIncomingFrame(registry, frame); err != nil {
+		if err := HandleIncomingFrame(registry, frame, nil); err != nil {
 			panic(err)
 		}
 	}
@@ -88,7 +88,7 @@ func demoFrameRouting() {
 	}
 
 	for _, frame := range frames {
-		if err := HandleIncomingFrame(registry, frame); err != nil {
+		if err := HandleIncomingFrame(registry, frame, nil); err != nil {
 			panic(err)
 		}
 		fmt.Printf("routed frame type %d\n", frame.Type)

@@ -30,6 +30,13 @@ func (stream *Stream) CanReceiveData() bool {
 	return stream.State == StreamOpen
 }
 
+func (stream *Stream) IsClosed() bool {
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+
+	return stream.State == StreamClosed
+}
+
 func (stream *Stream) Open() error {
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
@@ -102,7 +109,11 @@ func (r *StreamRegistry) CloseAll() {
 	}
 }
 
-func (r *StreamRegistry) OpenStream(id uint32) (*Stream, error) {
+func (r *StreamRegistry) OpenStream(id uint32, writer *TunnelWriter) (*Stream, error) {
+	if writer == nil {
+		return nil, fmt.Errorf("tunnel writer is nil")
+	}
+
 	r.mu.Lock()
 	if r.shuttingDown {
 		r.mu.Unlock()
@@ -159,6 +170,23 @@ func (r *StreamRegistry) OpenStream(id uint32) (*Stream, error) {
 	go func() {
 		defer r.wg.Done()
 		stream.RunWorker(r)
+	}()
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		err := PumpLocalToTunnel(stream.LocalConn, stream.ID, writer)
+		if err != nil {
+			fmt.Println("local reader:", err)
+		}
+		if err == nil && !stream.IsClosed() {
+			if err := writer.Send(Frame{
+				Type:     FrameClose,
+				StreamID: stream.ID,
+			}); err != nil {
+				fmt.Println("local reader:", err)
+			}
+		}
+		_ = stream.Close()
 	}()
 	r.mu.Unlock()
 
