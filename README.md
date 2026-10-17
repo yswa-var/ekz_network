@@ -9,7 +9,7 @@ Whats working??
 - Single tunnel writer: serialize outbound frames to avoid interleaved writes.
 - Lifecycle management: stream closure, connection cleanup, and shutdown coordination.
 - Integration test: a reported passing end-to-end echo test through the tunnel and local TCP echo service.
-
+```
 Test client
     │ OPEN / DATA / CLOSE frames
     ▼
@@ -32,3 +32,4 @@ Frame decoder → StreamRegistry
                            │
                            ▼
                       Test client
+```
