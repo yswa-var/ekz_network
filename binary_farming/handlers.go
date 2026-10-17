@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 func HandleFrame(stream *Stream, frame Frame) error {
 	if frame.StreamID != stream.ID {
@@ -22,36 +25,36 @@ func HandleFrame(stream *Stream, frame Frame) error {
 func HandleIncomingFrame(registry *StreamRegistry, frame Frame) error {
 	switch frame.Type {
 	case FrameOpen:
-		stream, err := registry.Register(frame.StreamID)
-		if err != nil {
-			return err
-		}
+		_, err := registry.OpenStream(frame.StreamID)
+		return err
 
-		if err := stream.Open(); err != nil {
-			_ = registry.Remove(frame.StreamID)
-			return err
-		}
-		return nil
-
-	case FrameData:
-		stream, ok := registry.Get(frame.StreamID)
-		if !ok {
-			return fmt.Errorf("stream %d not exists", frame.StreamID)
-		}
-		return stream.HandleData(frame.Payload)
-
-	case FrameClose:
-		stream, ok := registry.Get(frame.StreamID)
-		if !ok {
-			return fmt.Errorf("stream %d not exists", frame.StreamID)
-		}
-
-		if err := stream.Close(); err != nil {
-			return err
-		}
-		return registry.Remove(stream.ID)
+	case FrameData, FrameClose:
+		return registry.EnqueueFrame(frame)
 
 	default:
 		return fmt.Errorf("unsupported frame type: %d", frame.Type)
+	}
+}
+
+func (r *StreamRegistry) Shutdown(ctx context.Context) error {
+	r.mu.Lock()
+	r.shuttingDown = true
+	r.mu.Unlock()
+
+	finished := make(chan struct{})
+
+	go func() {
+		r.wg.Wait()
+		close(finished)
+	}()
+
+	select {
+	case <-finished:
+		return nil
+
+	case <-ctx.Done():
+		r.CloseAll()
+		<-finished
+		return ctx.Err()
 	}
 }

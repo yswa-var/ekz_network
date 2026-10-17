@@ -6,8 +6,10 @@ import (
 )
 
 type StreamRegistry struct {
-	mu      sync.RWMutex
-	streams map[uint32]*Stream
+	mu           sync.RWMutex
+	streams      map[uint32]*Stream
+	wg           sync.WaitGroup
+	shuttingDown bool
 }
 
 func NewStreamRegistry() *StreamRegistry {
@@ -24,19 +26,6 @@ func (registry *StreamRegistry) Get(id uint32) (*Stream, bool) {
 	return stream, ok
 }
 
-func (registry *StreamRegistry) Register(id uint32) (*Stream, error) {
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
-
-	if _, exists := registry.streams[id]; exists {
-		return nil, fmt.Errorf("stream %d already exists", id)
-	}
-
-	stream := &Stream{ID: id, State: StreamIdle}
-	registry.streams[id] = stream
-	return stream, nil
-}
-
 func (registry *StreamRegistry) Remove(id uint32) error {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
@@ -47,4 +36,17 @@ func (registry *StreamRegistry) Remove(id uint32) error {
 
 	delete(registry.streams, id)
 	return nil
+}
+
+func (r *StreamRegistry) RemoveIfSame(s *Stream) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	current, exists := r.streams[s.ID]
+	if !exists || current != s {
+		return false
+	}
+
+	delete(r.streams, s.ID)
+	return true
 }

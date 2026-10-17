@@ -21,13 +21,12 @@ func TestTunnelClient() error {
 	frames := []Frame{
 		{Type: FrameOpen, StreamID: 42},
 		{Type: FrameOpen, StreamID: 43},
-		{Type: FrameOpen, StreamID: 44},
-		{Type: FrameData, StreamID: 42, Payload: []byte("Hello A")},
-		{Type: FrameData, StreamID: 43, Payload: []byte("Hello B")},
-		{Type: FrameData, StreamID: 44, Payload: []byte("Hello C")},
+		{Type: FrameData, StreamID: 42, Payload: []byte("A1")},
+		{Type: FrameData, StreamID: 43, Payload: []byte("B1")},
+		{Type: FrameData, StreamID: 42, Payload: []byte("A2")},
+		{Type: FrameData, StreamID: 43, Payload: []byte("B2")},
 		{Type: FrameClose, StreamID: 42},
 		{Type: FrameClose, StreamID: 43},
-		{Type: FrameClose, StreamID: 44},
 	}
 
 	for _, frame := range frames {
