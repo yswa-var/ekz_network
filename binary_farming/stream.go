@@ -61,3 +61,13 @@ func (stream *Stream) HandleData(payload []byte) error {
 	fmt.Println(string(payload))
 	return nil
 }
+
+func (r *StreamRegistry) CloseAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, stream := range r.streams {
+		_ = stream.Close()
+		delete(r.streams, id)
+	}
+}

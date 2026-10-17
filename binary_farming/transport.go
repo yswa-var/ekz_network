@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -39,6 +40,25 @@ type TunnelWriter struct {
 	done   chan struct{}
 }
 
+func ServeTunnel(conn net.Conn, registry *StreamRegistry) error {
+	defer conn.Close()
+	defer registry.CloseAll()
+
+	for {
+		frame, err := DecodeFrame(conn)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+
+		if err := HandleIncomingFrame(registry, frame); err != nil {
+			return err
+		}
+	}
+}
+
 func (writer *TunnelWriter) Run() error {
 	defer close(writer.done)
 
@@ -60,4 +80,3 @@ func (writer *TunnelWriter) Submit(frame Frame) error {
 		return fmt.Errorf("tunnel writer stopped")
 	}
 }
-
