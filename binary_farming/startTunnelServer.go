@@ -23,7 +23,7 @@ func StartTunnelServer(address string) error {
 			return err
 		}
 
-		registry := NewStreamRegistry()
+		registry := NewStreamRegistry("127.0.0.1:3000")
 		go func() {
 			if err := ServeTunnel(conn, registry); err != nil {
 				log.Println(err)

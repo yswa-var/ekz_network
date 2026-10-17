@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"sync"
 )
 
@@ -14,11 +15,12 @@ const (
 )
 
 type Stream struct {
-	mu       sync.Mutex
-	ID       uint32
-	State    StreamState
-	Incoming chan Frame
-	Done     chan struct{}
+	mu        sync.Mutex
+	ID        uint32
+	State     StreamState
+	Incoming  chan Frame
+	Done      chan struct{}
+	LocalConn net.Conn
 }
 
 func (stream *Stream) CanReceiveData() bool {
@@ -40,31 +42,54 @@ func (stream *Stream) Open() error {
 	return nil
 }
 
-func (stream *Stream) Close() error {
+func (stream *Stream) Connect(addr string) error {
+	conn, err := ConnectLocal(addr)
+	if err != nil {
+		return err
+	}
+
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
+	stream.LocalConn = conn
 
+	return nil
+}
+
+func (stream *Stream) Close() error {
+	stream.mu.Lock()
 	if stream.State != StreamOpen {
-		return fmt.Errorf("can't Close stream: invalid state %d", stream.State)
+		state := stream.State
+		stream.mu.Unlock()
+		return fmt.Errorf("can't close stream: invalid state %d", state)
 	}
 
 	stream.State = StreamClosed
-
 	close(stream.Done)
+	conn := stream.LocalConn
+	stream.mu.Unlock()
+
+	if conn != nil {
+		return conn.Close()
+	}
 
 	return nil
 }
 
 func (stream *Stream) HandleData(payload []byte) error {
 	stream.mu.Lock()
-	defer stream.mu.Unlock()
-
 	if stream.State != StreamOpen {
+		stream.mu.Unlock()
 		return fmt.Errorf("stream %d is not open", stream.ID)
 	}
 
-	fmt.Println(string(payload))
-	return nil
+	conn := stream.LocalConn
+	stream.mu.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("stream %d has no local connection", stream.ID)
+	}
+
+	return ForwardToLocal(conn, payload)
 }
 
 func (r *StreamRegistry) CloseAll() {
@@ -79,15 +104,26 @@ func (r *StreamRegistry) CloseAll() {
 
 func (r *StreamRegistry) OpenStream(id uint32) (*Stream, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if r.shuttingDown {
+		r.mu.Unlock()
 		return nil, fmt.Errorf("registry is shutting down")
 	}
 
 	if _, exists := r.streams[id]; exists {
+		r.mu.Unlock()
 		return nil, fmt.Errorf("stream %d already exists", id)
 	}
+
+	if r.pending[id] {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("stream %d is being opened", id)
+	}
+
+	r.pending[id] = true
+	r.dialWG.Add(1)
+	localAddr := r.localAddr
+	r.mu.Unlock()
+	defer r.dialWG.Done()
 
 	stream := &Stream{
 		ID:       id,
@@ -97,7 +133,25 @@ func (r *StreamRegistry) OpenStream(id uint32) (*Stream, error) {
 	}
 
 	if err := stream.Open(); err != nil {
+		r.mu.Lock()
+		delete(r.pending, id)
+		r.mu.Unlock()
 		return nil, err
+	}
+
+	if err := stream.Connect(localAddr); err != nil {
+		r.mu.Lock()
+		delete(r.pending, id)
+		r.mu.Unlock()
+		return nil, err
+	}
+
+	r.mu.Lock()
+	delete(r.pending, id)
+	if r.shuttingDown {
+		r.mu.Unlock()
+		_ = stream.Close()
+		return nil, fmt.Errorf("registry is shutting down")
 	}
 
 	r.streams[id] = stream
@@ -106,6 +160,7 @@ func (r *StreamRegistry) OpenStream(id uint32) (*Stream, error) {
 		defer r.wg.Done()
 		stream.RunWorker(r)
 	}()
+	r.mu.Unlock()
 
 	return stream, nil
 }

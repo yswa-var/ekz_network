@@ -8,13 +8,18 @@ import (
 type StreamRegistry struct {
 	mu           sync.RWMutex
 	streams      map[uint32]*Stream
+	pending      map[uint32]bool
 	wg           sync.WaitGroup
+	dialWG       sync.WaitGroup
 	shuttingDown bool
+	localAddr    string
 }
 
-func NewStreamRegistry() *StreamRegistry {
+func NewStreamRegistry(localAddr string) *StreamRegistry {
 	return &StreamRegistry{
-		streams: make(map[uint32]*Stream),
+		streams:   make(map[uint32]*Stream),
+		pending:   make(map[uint32]bool),
+		localAddr: localAddr,
 	}
 }
 

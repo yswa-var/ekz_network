@@ -41,6 +41,8 @@ func (r *StreamRegistry) Shutdown(ctx context.Context) error {
 	r.shuttingDown = true
 	r.mu.Unlock()
 
+	r.dialWG.Wait()
+
 	finished := make(chan struct{})
 
 	go func() {

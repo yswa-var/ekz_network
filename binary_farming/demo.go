@@ -51,7 +51,7 @@ func demoStreamStateMachine() {
 func demoConcurrentRegistry() {
 	printSection("Concurrent stream registry")
 
-	registry := NewStreamRegistry()
+	registry := NewStreamRegistry("127.0.0.1:3000")
 	const streamCount = 8
 
 	var workers sync.WaitGroup
@@ -78,7 +78,7 @@ func demoConcurrentRegistry() {
 func demoFrameRouting() {
 	printSection("OPEN / DATA / CLOSE routing")
 
-	registry := NewStreamRegistry()
+	registry := NewStreamRegistry("127.0.0.1:3000")
 	streamID := uint32(42)
 
 	frames := []Frame{
