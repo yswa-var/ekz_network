@@ -28,7 +28,7 @@ func HandleIncomingFrame(registry *StreamRegistry, frame Frame, writer *TunnelWr
 		_, err := registry.OpenStream(frame.StreamID, writer)
 		return err
 
-	case FrameData, FrameClose:
+	case FrameData, FrameWindowUpdate, FrameClose:
 		return registry.EnqueueFrame(frame)
 
 	default:

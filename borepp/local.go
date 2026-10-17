@@ -29,10 +29,13 @@ func ReadLocalFrame(conn net.Conn, streamID uint32) (Frame, error) {
 	return Frame{}, err
 }
 
-func PumpLocalToTunnel(conn net.Conn, streamID uint32, writer *TunnelWriter) error {
+func PumpLocalToTunnel(conn net.Conn, stream *Stream, writer *TunnelWriter) error {
 	for {
-		frame, err := ReadLocalFrame(conn, streamID)
+		frame, err := ReadLocalFrame(conn, stream.ID)
 		if len(frame.Payload) > 0 {
+			if creditErr := stream.WaitAndConsumeCredit(int64(len(frame.Payload))); creditErr != nil {
+				return creditErr
+			}
 			if sendErr := writer.Send(frame); sendErr != nil {
 				return sendErr
 			}

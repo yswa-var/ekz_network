@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"sync"
 )
@@ -15,13 +17,18 @@ const (
 	StreamClosed
 )
 
+const InitialStreamWindow = 64 * 1024
+
 type Stream struct {
-	mu        sync.Mutex
-	ID        uint32
-	State     StreamState
-	Incoming  chan Frame
-	Done      chan struct{}
-	LocalConn net.Conn
+	mu         sync.Mutex
+	ID         uint32
+	State      StreamState
+	Incoming   chan Frame
+	Done       chan struct{}
+	LocalConn  net.Conn
+	sendMu     sync.Mutex
+	sendCredit int64
+	sendCond   *sync.Cond
 }
 
 func (stream *Stream) CanReceiveData() bool {
@@ -64,7 +71,13 @@ func (stream *Stream) Connect(addr string) error {
 }
 
 func (stream *Stream) Close() error {
+	// Keep the state transition and condition broadcast ordered with
+	// WaitAndConsumeCredit's check so a waiter cannot miss the close signal.
+	stream.sendMu.Lock()
+	defer stream.sendMu.Unlock()
+
 	stream.mu.Lock()
+
 	if stream.State != StreamOpen {
 		state := stream.State
 		stream.mu.Unlock()
@@ -74,7 +87,12 @@ func (stream *Stream) Close() error {
 	stream.State = StreamClosed
 	close(stream.Done)
 	conn := stream.LocalConn
+
 	stream.mu.Unlock()
+
+	if stream.sendCond != nil {
+		stream.sendCond.Broadcast()
+	}
 
 	if conn != nil {
 		return conn.Close()
@@ -110,7 +128,9 @@ func (r *StreamRegistry) CloseAll() {
 	}
 }
 
-func (r *StreamRegistry) OpenStream(id uint32, writer *TunnelWriter) (*Stream, error) {
+func (r *StreamRegistry) OpenStream(
+	id uint32,
+	writer *TunnelWriter) (*Stream, error) {
 	if writer == nil {
 		return nil, fmt.Errorf("tunnel writer is nil")
 	}
@@ -138,11 +158,14 @@ func (r *StreamRegistry) OpenStream(id uint32, writer *TunnelWriter) (*Stream, e
 	defer r.dialWG.Done()
 
 	stream := &Stream{
-		ID:       id,
-		State:    StreamIdle,
-		Incoming: make(chan Frame, 16),
-		Done:     make(chan struct{}),
+		ID:         id,
+		State:      StreamIdle,
+		Incoming:   make(chan Frame, 16),
+		Done:       make(chan struct{}),
+		sendCredit: InitialStreamWindow,
 	}
+
+	stream.sendCond = sync.NewCond(&stream.sendMu)
 
 	if err := stream.Open(); err != nil {
 		r.mu.Lock()
@@ -170,12 +193,12 @@ func (r *StreamRegistry) OpenStream(id uint32, writer *TunnelWriter) (*Stream, e
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		stream.RunWorker(r)
+		stream.RunWorker(r, writer)
 	}()
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		err := PumpLocalToTunnel(stream.LocalConn, stream.ID, writer)
+		err := PumpLocalToTunnel(stream.LocalConn, stream, writer)
 		if err != nil && !errors.Is(err, net.ErrClosed) {
 			fmt.Println("local reader:", err)
 		}
@@ -226,7 +249,10 @@ func (r *StreamRegistry) EnqueueFrame(frame Frame) error {
 	return stream.Enqueue(frame)
 }
 
-func (s *Stream) RunWorker(registry *StreamRegistry) {
+func (s *Stream) RunWorker(
+	registry *StreamRegistry,
+	writer *TunnelWriter,
+) {
 	defer registry.RemoveIfSame(s)
 
 	for {
@@ -235,6 +261,32 @@ func (s *Stream) RunWorker(registry *StreamRegistry) {
 			switch frame.Type {
 			case FrameData:
 				if err := s.HandleData(frame.Payload); err != nil {
+					fmt.Println(err)
+					continue
+				}
+				update := Frame{
+					Type:     FrameWindowUpdate,
+					StreamID: s.ID,
+					Payload:  EncodeWindowUpdate(uint64(len(frame.Payload))),
+				}
+
+				if err := writer.Send(update); err != nil {
+					fmt.Println(err)
+					return
+				}
+			case FrameWindowUpdate:
+				n, err := DecodeWindowUpdate(frame.Payload)
+				if err != nil {
+					fmt.Println(err)
+					continue
+				}
+
+				if n > math.MaxInt64 {
+					fmt.Println("window update too large")
+					continue
+				}
+
+				if err := s.AddCredit(int64(n)); err != nil {
 					fmt.Println(err)
 				}
 			case FrameClose:
@@ -247,4 +299,57 @@ func (s *Stream) RunWorker(registry *StreamRegistry) {
 			return
 		}
 	}
+}
+
+func (s *Stream) AddCredit(n int64) error {
+	if n <= 0 {
+		return fmt.Errorf("credit amount must be positive")
+	}
+
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	s.sendCredit += n
+	s.sendCond.Broadcast()
+
+	return nil
+}
+
+func (s *Stream) WaitAndConsumeCredit(n int64) error {
+	if n <= 0 {
+		return fmt.Errorf("credit amount must be positive")
+	}
+
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	for {
+		s.mu.Lock()
+		closed := s.State == StreamClosed
+		s.mu.Unlock()
+		if closed {
+			return fmt.Errorf("stream %d is closed", s.ID)
+		}
+
+		if s.sendCredit >= n {
+			s.sendCredit -= n
+			return nil
+		}
+
+		s.sendCond.Wait()
+	}
+}
+
+func EncodeWindowUpdate(n uint64) []byte {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, n)
+	return buf
+}
+
+func DecodeWindowUpdate(payload []byte) (uint64, error) {
+	if len(payload) != 8 {
+		return 0, fmt.Errorf("invalid window update payload")
+	}
+
+	return binary.BigEndian.Uint64(payload), nil
 }

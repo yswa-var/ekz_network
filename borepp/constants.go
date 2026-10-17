@@ -6,7 +6,8 @@ const (
 )
 
 const (
-	FrameOpen  uint8 = 1
-	FrameData  uint8 = 2
-	FrameClose uint8 = 3
+	FrameOpen         = 1
+	FrameData         = 2
+	FrameClose        = 3
+	FrameWindowUpdate = 4
 )
