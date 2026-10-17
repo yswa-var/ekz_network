@@ -63,8 +63,7 @@ func (writer *TunnelWriter) Run() error {
 	defer close(writer.done)
 
 	for frame := range writer.frames {
-		encoded := EncodeFrame(frame)
-		if _, err := io.Copy(writer.conn, bytes.NewReader(encoded)); err != nil {
+		if err := WriteFrame(writer.conn, frame); err != nil {
 			return err
 		}
 	}
@@ -72,11 +71,15 @@ func (writer *TunnelWriter) Run() error {
 	return nil
 }
 
-func (writer *TunnelWriter) Submit(frame Frame) error {
+func (writer *TunnelWriter) Send(frame Frame) error {
 	select {
 	case writer.frames <- frame:
 		return nil
 	case <-writer.done:
 		return fmt.Errorf("tunnel writer stopped")
 	}
+}
+
+func (writer *TunnelWriter) Submit(frame Frame) error {
+	return writer.Send(frame)
 }
