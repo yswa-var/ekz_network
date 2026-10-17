@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 )
 
 type StreamState uint8
@@ -16,23 +17,32 @@ const (
 )
 
 type Stream struct {
+	mu    sync.Mutex
 	ID    uint32
 	State StreamState
 }
 
 func (s *Stream) CanReceiveData() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.State == StreamOpen
 }
 
 func (s *Stream) Open() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.State != StreamIdle {
-		return fmt.Errorf("can't open stream: invalid state %d", s.State)
+		return fmt.Errorf("invalid state: %d", s.State)
 	}
+
 	s.State = StreamOpen
 	return nil
 }
 
 func (s *Stream) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	// 1. Reject if state is not StreamOpen
 	if s.State != StreamOpen {
 		return fmt.Errorf("can't Close stream: invalid state %d", s.State)
