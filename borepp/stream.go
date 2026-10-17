@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -175,7 +176,7 @@ func (r *StreamRegistry) OpenStream(id uint32, writer *TunnelWriter) (*Stream, e
 	go func() {
 		defer r.wg.Done()
 		err := PumpLocalToTunnel(stream.LocalConn, stream.ID, writer)
-		if err != nil {
+		if err != nil && !errors.Is(err, net.ErrClosed) {
 			fmt.Println("local reader:", err)
 		}
 		if err == nil && !stream.IsClosed() {

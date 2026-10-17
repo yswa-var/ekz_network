@@ -17,13 +17,17 @@ func StartTunnelServer(address string) error {
 	}
 	defer listener.Close()
 
+	return ServeTunnelServer(listener, "127.0.0.1:3000")
+}
+
+func ServeTunnelServer(listener net.Listener, localAddr string) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return err
 		}
 
-		registry := NewStreamRegistry("127.0.0.1:3000")
+		registry := NewStreamRegistry(localAddr)
 		go func() {
 			if err := ServeTunnel(conn, registry); err != nil {
 				log.Println(err)
